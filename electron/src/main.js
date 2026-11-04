@@ -52,11 +52,19 @@ function registerIpcHandlers() {
     if (typeof payload?.filename !== 'string' || payload.filename.length === 0) {
       throw new UserFacingError('اختر ملف النسخة الاحتياطية');
     }
-    await restoreBackup(database.db, {
-      liveFilePath: database.filePath,
-      backupDir: database.backupDir,
-      backupFilePath: path.join(database.backupDir, path.basename(payload.filename)),
-    });
+    try {
+      await restoreBackup(database.db, {
+        liveFilePath: database.filePath,
+        backupDir: database.backupDir,
+        backupFilePath: path.join(database.backupDir, path.basename(payload.filename)),
+      });
+    } catch (error) {
+      if (!database.db.open) {
+        app.relaunch();
+        app.exit(0);
+      }
+      throw error;
+    }
     app.relaunch();
     app.exit(0);
     return { restarting: true };

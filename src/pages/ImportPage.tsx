@@ -4,6 +4,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import EmptyState from '@/components/ui/EmptyState';
 import { useSession } from '@/context/SessionContext';
 import { getDb } from '@/db/db';
+import { getDesktopApi, isElectronAvailable, type ImportPartyPlan } from '@/lib/electronBridge';
 
 type Step = 'select' | 'preview' | 'done';
 const DATA_TYPES = [
@@ -11,6 +12,24 @@ const DATA_TYPES = [
   { value: 'products', label: 'أصناف' },
   { value: 'employees', label: 'موظفون' },
 ];
+
+function PlanSummary({ plan }: { plan: ImportPartyPlan }) {
+  return (
+    <div className="mb-4 space-y-2 text-sm">
+      <div className="flex flex-wrap gap-3">
+        <span className="text-emerald-600 font-semibold num">جاهز للاستيراد: {plan.ready.length}</span>
+        <span className="text-amber-600 font-semibold num">مكرر (سيُتخطى): {plan.duplicates.length}</span>
+        <span className="text-rose-600 font-semibold num">به أخطاء: {plan.errors.length}</span>
+      </div>
+      {plan.errors.length > 0 && (
+        <ul className="max-h-32 overflow-y-auto rounded-lg border border-rose-200 bg-rose-50 p-3 space-y-1 text-rose-700">
+          {plan.errors.slice(0, 50).map((err) => <li key={err.line} className="num">سطر {err.line}: {err.message}</li>)}
+        </ul>
+      )}
+      {plan.errors.length > 0 && <p className="text-xs text-slate-500">لن يُستورد أي سجل حتى تُصحَّح الأخطاء في الملف.</p>}
+    </div>
+  );
+}
 
 export default function ImportPage() {
   const { hasPermission } = useSession();
@@ -22,6 +41,9 @@ export default function ImportPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
+  const [skippedCount, setSkippedCount] = useState(0);
+  const [rawText, setRawText] = useState('');
+  const [plan, setPlan] = useState<ImportPartyPlan | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function parseCSV(text: string): string[][] {
@@ -52,7 +74,13 @@ export default function ImportPage() {
         if (parsed.length < 2) { setError('الملف لا يحتوي على بيانات كافية'); return; }
         setHeaders(parsed[0]);
         setRows(parsed.slice(1));
+        setRawText(text);
         setStep('preview');
+        if (isElectronAvailable()) {
+          getDesktopApi().farm.imports.previewParties(text)
+            .then(setPlan)
+            .catch((err: unknown) => setError(err instanceof Error ? err.message : 'خطأ في المعاينة'));
+        }
       } else {
         setError('يدعم البرنامج حاليًا ملفات CSV. صيغ XLSX و PDF ستُضاف لاحقًا.');
       }
@@ -63,6 +91,13 @@ export default function ImportPage() {
   async function handleImport() {
     setImporting(true); setError(null);
     try {
+      if (isElectronAvailable()) {
+        const result = await getDesktopApi().farm.imports.commitParties(rawText);
+        setImportedCount(result.imported);
+        setSkippedCount(result.skipped);
+        setStep('done');
+        return;
+      }
       const db = await getDb();
       let count = 0;
       if (dataType === 'parties') {
@@ -99,8 +134,13 @@ export default function ImportPage() {
     finally { setImporting(false); }
   }
 
+  const canCommit = isElectronAvailable()
+    ? plan !== null && plan.errors.length === 0 && plan.ready.length > 0
+    : true;
+
   function reset() {
     setStep('select'); setFileName(''); setRows([]); setHeaders([]); setError(null); setImportedCount(0);
+    setSkippedCount(0); setRawText(''); setPlan(null);
   }
 
   return (
@@ -133,7 +173,7 @@ export default function ImportPage() {
               </div>
               <div className="mb-4"><label className="text-sm font-semibold text-slate-700 mb-1 block">نوع البيانات</label>
                 <select value={dataType} onChange={(e) => setDataType(e.target.value)} className="input-base">
-                  {DATA_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  {DATA_TYPES.filter((d) => !isElectronAvailable() || d.value === 'parties').map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select></div>
               <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-lg">
                 <table className="w-full text-sm">
@@ -151,8 +191,9 @@ export default function ImportPage() {
               </div>
               {rows.length > 20 && <p className="text-xs text-slate-400 mt-2">عرض أول 20 سجل من {rows.length}</p>}
               {error && <div className="flex items-center gap-2 text-sm text-rose-600 mt-3"><AlertCircle className="h-4 w-4" />{error}</div>}
+              {plan && <PlanSummary plan={plan} />}
               <div className="flex gap-2 mt-4">
-                <button onClick={handleImport} disabled={importing} className="btn-primary flex-1"><ArrowRight className="h-4 w-4" /> {importing ? 'جارٍ الاستيراد...' : 'تأكيد الاستيراد'}</button>
+                <button onClick={handleImport} disabled={importing || !canCommit} className="btn-primary flex-1"><ArrowRight className="h-4 w-4" /> {importing ? 'جارٍ الاستيراد...' : 'تأكيد الاستيراد'}</button>
                 <button onClick={reset} className="btn-secondary">إلغاء</button>
               </div>
             </div>
@@ -163,6 +204,7 @@ export default function ImportPage() {
                 <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-3" />
                 <h3 className="font-bold text-slate-800">تم الاستيراد بنجاح</h3>
                 <p className="text-sm text-slate-500 mt-1">تم استيراد {importedCount} سجل إلى {DATA_TYPES.find((d) => d.value === dataType)?.label}</p>
+                {skippedCount > 0 && <p className="text-xs text-slate-400 mt-1 num">تم تخطي {skippedCount} سجل مكرر</p>}
                 {error && <div className="flex items-center gap-2 text-sm text-rose-600 mt-2"><AlertCircle className="h-4 w-4" />{error}</div>}
                 <button onClick={reset} className="btn-primary mt-5">استيراد ملف آخر</button>
               </div>

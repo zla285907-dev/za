@@ -55,15 +55,18 @@ test('transfers and checks are recorded and move only through their allowed stat
   treasury.updateTransferStatus(db, userId, transfer.id, 'completed');
   assert.throws(() => treasury.updateTransferStatus(db, userId, transfer.id, 'pending'), (e) => e instanceof UserFacingError);
 
-  const incoming = treasury.createCheck(db, userId, { direction: 'incoming', amount: 3000, dueDate: '2024-04-01', checkNumber: '88' });
+  const customer = parties.createParty(db, userId, { name: 'عميل شيكات', type: 'customer' });
+  const box = treasury.createCashbox(db, userId, { name: 'خزينة الشيكات', openingBalance: 0, date: '2024-01-01' });
+  const incoming = treasury.createCheck(db, userId, { direction: 'incoming', amount: 3000, dueDate: '2024-04-01', checkNumber: '88', partyId: customer.id });
   assert.equal(treasury.listChecks(db).find((c) => c.id === incoming.id).status, 'received');
-  treasury.updateCheckStatus(db, userId, incoming.id, 'collected');
-  assert.throws(() => treasury.updateCheckStatus(db, userId, incoming.id, 'paid'), (e) => e instanceof UserFacingError);
+  treasury.updateCheckStatus(db, userId, incoming.id, 'collected', { cashboxId: box.id, date: '2024-04-01' });
+  assert.throws(() => treasury.updateCheckStatus(db, userId, incoming.id, 'paid', { cashboxId: box.id }), (e) => e instanceof UserFacingError);
 });
 
 test('checks are numbered by direction', () => {
-  const incoming = treasury.createCheck(db, userId, { direction: 'incoming', amount: 100, dueDate: '2024-04-01' });
-  const outgoing = treasury.createCheck(db, userId, { direction: 'outgoing', amount: 100, dueDate: '2024-04-01' });
+  const party = parties.createParty(db, userId, { name: 'طرف الترقيم', type: 'customer' });
+  const incoming = treasury.createCheck(db, userId, { direction: 'incoming', amount: 100, dueDate: '2024-04-01', partyId: party.id });
+  const outgoing = treasury.createCheck(db, userId, { direction: 'outgoing', amount: 100, dueDate: '2024-04-01', partyId: party.id });
   assert.match(incoming.docNumber, /^CHK-I-/);
   assert.match(outgoing.docNumber, /^CHK-O-/);
 });

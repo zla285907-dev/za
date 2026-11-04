@@ -8,6 +8,7 @@ import { formatEGP, formatShortDate } from '@/lib/format';
 import { listChecks, createCheck, updateCheckStatus, type Check } from '@/services/financeService';
 import { listParties, type Party } from '@/services/partyService';
 import { listActivities, type Activity } from '@/services/activityService';
+import { listCashboxes, type Cashbox } from '@/services/treasuryService';
 
 const STATUS_LABELS: Record<string, string> = {
   received: 'مستلم', issued: 'صادر', due: 'مستحق', collected: 'تم التحصيل', paid: 'تم الصرف', returned: 'مرتد', cancelled: 'ملغى',
@@ -20,6 +21,7 @@ export default function ChecksPage() {
   const { hasPermission } = useSession();
   const [checks, setChecks] = useState<Check[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [settling, setSettling] = useState<{ check: Check; status: string } | null>(null);
 
   const load = useCallback(() => listChecks().then(setChecks), []);
   useEffect(() => { load(); }, [load]);
@@ -80,7 +82,12 @@ export default function ChecksPage() {
                       <td className="px-4 py-3">
                         <select
                           value={c.status}
-                          onChange={async (e) => { await updateCheckStatus(c.id, e.target.value); load(); }}
+                          onChange={async (e) => {
+                            const next = e.target.value;
+                            if (next === 'collected' || next === 'paid') { setSettling({ check: c, status: next }); return; }
+                            await updateCheckStatus(c.id, next);
+                            load();
+                          }}
                           className="text-xs rounded border border-slate-200 px-1.5 py-1 bg-white"
                         >
                           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -95,6 +102,59 @@ export default function ChecksPage() {
         )}
       </div>
       {showModal && <CheckModal onClose={() => setShowModal(false)} onSaved={load} />}
+      {settling && <SettleCheckModal check={settling.check} status={settling.status} onClose={() => setSettling(null)} onSaved={load} />}
+    </div>
+  );
+}
+
+function SettleCheckModal({ check, status, onClose, onSaved }: {
+  check: Check; status: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [cashboxes, setCashboxes] = useState<Cashbox[]>([]);
+  const [cashboxId, setCashboxId] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const isCollection = status === 'collected';
+
+  useEffect(() => { listCashboxes().then((rows) => setCashboxes(rows.filter((b) => b.is_active))); }, []);
+
+  async function handleConfirm() {
+    if (!cashboxId) { setError('اختر الخزينة'); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await updateCheckStatus(check.id, status, { cashboxId, date });
+      onSaved(); onClose();
+    } catch (e) { setError(e instanceof Error ? e.message : 'خطأ'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4">
+      <div className="card p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-800">{isCollection ? 'تحصيل شيك وارد' : 'صرف شيك صادر'}</h3>
+          <button onClick={onClose} className="btn-ghost p-1.5"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">
+          الشيك {check.doc_number} بقيمة <span className="num font-semibold text-slate-700">{formatEGP(check.amount / 100)}</span>
+          {isCollection ? ' سيُضاف إلى الخزينة المختارة.' : ' سيُخصم من الخزينة المختارة.'}
+        </p>
+        <div className="space-y-3">
+          <div><label className="text-sm font-semibold text-slate-700 mb-1 block">الخزينة</label>
+            <select value={cashboxId} onChange={(e) => setCashboxId(e.target.value)} className="input-base">
+              <option value="">— اختر الخزينة —</option>
+              {cashboxes.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select></div>
+          <div><label className="text-sm font-semibold text-slate-700 mb-1 block">تاريخ الحركة</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input-base" /></div>
+          {error && <div className="flex items-center gap-2 text-sm text-rose-600"><AlertCircle className="h-4 w-4" />{error}</div>}
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button onClick={handleConfirm} disabled={saving} className="btn-primary flex-1">{saving ? 'جارٍ الحفظ...' : 'تأكيد'}</button>
+          <button onClick={onClose} className="btn-secondary">إلغاء</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -130,9 +190,10 @@ function CheckModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     setError(null);
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError('أدخل مبلغًا صحيحًا'); return; }
+    if (!partyId) { setError('اختر الطرف الذي يتعامل معه الشيك'); return; }
     setSaving(true);
     try {
-      await createCheck({ date, direction, amount: amt, partyId: partyId || null, bankName, checkNumber, dueDate, activityId: activityId || null, createdBy: user?.id ?? null });
+      await createCheck({ date, direction, amount: amt, partyId, bankName, checkNumber, dueDate, activityId: activityId || null, createdBy: user?.id ?? null });
       onSaved(); onClose();
     } catch (e) { setError(e instanceof Error ? e.message : 'خطأ'); }
     finally { setSaving(false); }
@@ -156,8 +217,8 @@ function CheckModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           </div>
           <div><label className="text-sm font-semibold text-slate-700 mb-1 block">المبلغ (ج.م)</label><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="input-base num" /></div>
           <div><label className="text-sm font-semibold text-slate-700 mb-1 block">الطرف</label>
-            <select value={partyId} onChange={(e) => setPartyId(e.target.value)} className="input-base">
-              <option value="">—</option>
+            <select value={partyId} onChange={(e) => setPartyId(e.target.value)} className="input-base" required>
+              <option value="">— اختر الطرف —</option>
               {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select></div>
           <div className="grid grid-cols-2 gap-3">

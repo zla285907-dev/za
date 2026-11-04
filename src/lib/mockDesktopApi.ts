@@ -657,7 +657,12 @@ const mockApi: DesktopApi = {
       transfers: async () => cashTransactions.filter((transaction) => transaction.reference_type === 'cash_transfer'),
       createTransfer: async (input) => createMockCashTransfer(input),
       checks: async () => [],
-      createCheck: async () => ({})
+      createCheck: async () => ({ id: 'mock-check', docNumber: 'CHK-MOCK' }),
+      updateCheckStatus: async () => undefined
+    },
+    imports: {
+      previewParties: async () => ({ ready: [], duplicates: [], errors: [] }),
+      commitParties: async () => ({ imported: 0, skipped: 0 }),
     },
     accounting: {
       accounts: async () => accounts.map((account) => ({ ...account })),

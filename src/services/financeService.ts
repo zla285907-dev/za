@@ -1,4 +1,5 @@
 import { getDb, toCents } from '@/db/db';
+import { getDesktopApi, isElectronAvailable } from '@/lib/electronBridge';
 import { createJournalEntry, nextDocNumber } from './accountingService';
 
 export interface Check {
@@ -18,6 +19,10 @@ export interface Check {
 }
 
 export async function listChecks(filters?: { status?: string }): Promise<Check[]> {
+  if (isElectronAvailable()) {
+    const rows = (await getDesktopApi().farm.treasury.checks()) as Check[];
+    return filters?.status ? rows.filter((c) => c.status === filters.status) : rows;
+  }
   const db = await getDb();
   let query = `
     SELECT c.id, c.doc_number, c.check_number, c.bank_name, c.direction, c.party_id,
@@ -46,6 +51,18 @@ export async function createCheck(data: {
   createdBy?: string | null;
 }): Promise<{ id: string; docNumber: string }> {
   if (data.amount <= 0) throw new Error('المبلغ يجب أن يكون أكبر من صفر');
+  if (isElectronAvailable()) {
+    return getDesktopApi().farm.treasury.createCheck({
+      direction: data.direction,
+      amount: data.amount,
+      partyId: data.partyId ?? null,
+      issueDate: data.date,
+      dueDate: data.dueDate,
+      checkNumber: data.checkNumber ?? null,
+      bankName: data.bankName ?? null,
+      description: data.description ?? null,
+    }) as Promise<{ id: string; docNumber: string }>;
+  }
   const db = await getDb();
   const docNumber = await nextDocNumber(data.direction === 'incoming' ? 'check_in' : 'check_out');
   const amountCents = toCents(data.amount);
@@ -74,7 +91,11 @@ export async function createCheck(data: {
   return { id: res.rows[0].id, docNumber };
 }
 
-export async function updateCheckStatus(id: string, status: string): Promise<void> {
+export async function updateCheckStatus(id: string, status: string, options?: { cashboxId?: string; date?: string }): Promise<void> {
+  if (isElectronAvailable()) {
+    await getDesktopApi().farm.treasury.updateCheckStatus({ checkId: id, status, cashboxId: options?.cashboxId, date: options?.date });
+    return;
+  }
   const db = await getDb();
   await db.query('UPDATE checks SET status = $1 WHERE id = $2', [status, id]);
 }

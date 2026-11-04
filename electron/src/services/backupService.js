@@ -34,19 +34,27 @@ function listBackups(backupDir) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-// الاستعادة: نسخة أمان من الحالية أولًا، ثم استبدال الملف. على المستدعي إعادة فتح القاعدة بعدها
+// الاستعادة: نسخة أمان من الحالية، ثم نسخ الملف المختار وفحصه وهو مفتوح. الاستبدال بعد إغلاق القاعدة
+// وأي فشل بعد الإغلاق يعيد التشغيل فيفتح الملف الأصلي كما هو لأن الاستبدال الذري لم يكتمل
 async function restoreBackup(db, { liveFilePath, backupDir, backupFilePath }) {
   if (path.dirname(backupFilePath) !== backupDir || !BACKUP_NAME.test(path.basename(backupFilePath))) {
     throw new UserFacingError('ملف النسخة الاحتياطية غير موجود');
   }
   verifyBackupFile(backupFilePath);
   const safetyBackup = await createBackup(db, backupDir);
+  const staging = `${liveFilePath}.restore-tmp`;
+  try {
+    fs.copyFileSync(backupFilePath, staging);
+    verifyBackupFile(staging);
+  } catch (error) {
+    fs.rmSync(staging, { force: true });
+    throw error;
+  }
   db.close();
   for (const suffix of ['-wal', '-shm']) fs.rmSync(liveFilePath + suffix, { force: true });
-  const staging = `${liveFilePath}.restore-tmp`;
-  fs.copyFileSync(backupFilePath, staging);
   fs.renameSync(staging, liveFilePath);
   return { safetyBackup };
 }
+
 
 module.exports = { verifyBackupFile, listBackups, restoreBackup };

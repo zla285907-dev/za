@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { UserFacingError } = require('../errors');
 const { audit } = require('../domain/audit');
-const { assertIsoDate, requireText, optionalText, toPiastres } = require('../domain/money');
+const { assertIsoDate, requireText, optionalText, toPiastres, todayIso } = require('../domain/money');
 const { nextDocNumber, postJournalEntry } = require('../domain/postingEngine');
 
 const CHECK_STATUS_BY_DIRECTION = {
@@ -9,6 +9,15 @@ const CHECK_STATUS_BY_DIRECTION = {
   outgoing: { next: { issued: ['paid', 'returned', 'cancelled'] } },
 };
 const TRANSFER_STATUSES = ['pending', 'completed', 'cancelled'];
+
+// الشيك يمر بثلاث مراحل محاسبية: فتح (تسجيل الشيك)، تسوية (تحصيل/صرف نقدي)، عكس (ارتداد/إلغاء)
+const CHECK_PHASE_BY_STATUS = {
+  received: 'open', issued: 'open', collected: 'settle', paid: 'settle', returned: 'reverse', cancelled: 'reverse',
+};
+const CHECK_SIDES = {
+  incoming: { open: ['held', 'party'], settle: ['cash', 'held'], reverse: ['party', 'held'] },
+  outgoing: { open: ['party', 'held'], settle: ['held', 'cash'], reverse: ['held', 'party'] },
+};
 
 function cashboxBalanceSql() {
   return `
@@ -32,12 +41,13 @@ function cashboxBalance(db, cashboxId) {
 
 function insertCashTransaction(db, {
   docNumber, date, type, direction, cashboxId, amount, sourceType, sourceId, description = null, journalEntryId, userId,
+  paymentMethod = 'cash',
 }) {
   db.prepare(`
     INSERT INTO cash_transactions (id, doc_number, date, type, direction, cashbox_id, amount, payment_method,
       source_type, source_id, description, journal_entry_id, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'cash', ?, ?, ?, ?, ?)
-  `).run(crypto.randomUUID(), docNumber, date, type, direction, cashboxId, amount,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(crypto.randomUUID(), docNumber, date, type, direction, cashboxId, amount, paymentMethod,
     sourceType, sourceId, description, journalEntryId, userId);
 }
 
@@ -161,6 +171,55 @@ function listChecks(db) {
   `).all();
 }
 
+// يرحّل مرحلة واحدة من حياة الشيك: قيد متوازن + حركة الطرف + حركة النقدية عند التسوية
+function postCheckPhase(db, userId, check, phase, { date, cashbox = null }) {
+  if (!check.party_id) throw new UserFacingError('يجب ربط الشيك بطرف قبل تسجيل حركته');
+  const incoming = check.direction === 'incoming';
+  const accountFor = {
+    held: incoming ? 'acc_checks_recv' : 'acc_checks_pay',
+    party: incoming ? 'acc_ar' : 'acc_ap',
+    cash: cashbox?.account_id,
+  };
+  const [debitKey, creditKey] = CHECK_SIDES[check.direction][phase];
+  const description = `شيك ${check.doc_number}`;
+  const entry = postJournalEntry(db, {
+    date,
+    description,
+    referenceType: `check_${phase}`,
+    referenceId: check.id,
+    userId,
+    lines: [
+      { accountId: accountFor[debitKey], debit: check.amount, credit: 0 },
+      { accountId: accountFor[creditKey], debit: 0, credit: check.amount },
+    ],
+  });
+
+  if (phase === 'settle') {
+    insertCashTransaction(db, {
+      docNumber: nextDocNumber(db, incoming ? 'receipt' : 'payment'),
+      date,
+      type: incoming ? 'receipt' : 'payment',
+      direction: debitKey === 'cash' ? 'in' : 'out',
+      cashboxId: cashbox.id,
+      amount: check.amount,
+      sourceType: 'check',
+      sourceId: check.id,
+      description,
+      journalEntryId: entry.id,
+      userId,
+      paymentMethod: 'check',
+    });
+    return;
+  }
+
+  const partyDebit = debitKey === 'party';
+  db.prepare(`
+    INSERT INTO party_transactions (id, party_id, date, type, reference_type, reference_id, debit, credit, description)
+    VALUES (?, ?, ?, ?, 'check', ?, ?, ?, ?)
+  `).run(crypto.randomUUID(), check.party_id, date, phase === 'open' ? 'payment' : 'adjustment', check.id,
+    partyDebit ? check.amount : 0, partyDebit ? 0 : check.amount, description);
+}
+
 function createCheck(db, userId, input) {
   const direction = input?.direction;
   if (direction !== 'incoming' && direction !== 'outgoing') throw new UserFacingError('اتجاه الشيك غير صالح');
@@ -168,26 +227,36 @@ function createCheck(db, userId, input) {
   const dueDate = assertIsoDate(input?.dueDate, 'تاريخ الاستحقاق');
   const issueDate = input?.issueDate ? assertIsoDate(input.issueDate, 'تاريخ الإصدار') : null;
   const partyId = input?.partyId ? String(input.partyId) : null;
-  if (partyId && !db.prepare('SELECT id FROM parties WHERE id = ?').get(partyId)) throw new UserFacingError('الطرف غير موجود');
+  if (!partyId) throw new UserFacingError('اختر الطرف الذي يتعامل معه الشيك');
+  if (!db.prepare('SELECT id FROM parties WHERE id = ?').get(partyId)) throw new UserFacingError('الطرف غير موجود');
   const id = crypto.randomUUID();
-  const docNumber = nextDocNumber(db, direction === 'incoming' ? 'check_in' : 'check_out');
   const status = direction === 'incoming' ? 'received' : 'issued';
-  db.prepare(`
-    INSERT INTO checks (id, doc_number, check_number, bank_name, direction, party_id, amount, issue_date, due_date, status, description, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, docNumber, optionalText(input?.checkNumber, 40), optionalText(input?.bankName, 80), direction, partyId,
-    amount, issueDate, dueDate, status, optionalText(input?.description, 300), userId);
-  audit(db, { userId, action: 'create', module: 'treasury', entityId: id, entityType: 'check', details: { docNumber, amount } });
-  return { id, docNumber };
+  return db.transaction(() => {
+    const docNumber = nextDocNumber(db, direction === 'incoming' ? 'check_in' : 'check_out');
+    db.prepare(`
+      INSERT INTO checks (id, doc_number, check_number, bank_name, direction, party_id, amount, issue_date, due_date, status, description, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, docNumber, optionalText(input?.checkNumber, 40), optionalText(input?.bankName, 80), direction, partyId,
+      amount, issueDate, dueDate, status, optionalText(input?.description, 300), userId);
+    postCheckPhase(db, userId, { id, doc_number: docNumber, direction, amount, party_id: partyId }, 'open', { date: issueDate ?? todayIso() });
+    audit(db, { userId, action: 'create', module: 'treasury', entityId: id, entityType: 'check', details: { docNumber, amount } });
+    return { id, docNumber };
+  })();
 }
 
-function updateCheckStatus(db, userId, checkId, status) {
-  const check = db.prepare('SELECT id, direction, status FROM checks WHERE id = ?').get(String(checkId ?? ''));
+function updateCheckStatus(db, userId, checkId, status, { date, cashboxId } = {}) {
+  const check = db.prepare('SELECT id, doc_number, direction, status, amount, party_id FROM checks WHERE id = ?').get(String(checkId ?? ''));
   if (!check) throw new UserFacingError('الشيك غير موجود');
   const allowed = CHECK_STATUS_BY_DIRECTION[check.direction].next[check.status] ?? [];
   if (!allowed.includes(status)) throw new UserFacingError('لا يمكن تغيير حالة الشيك إلى هذه الحالة');
-  db.prepare('UPDATE checks SET status = ? WHERE id = ?').run(status, check.id);
-  audit(db, { userId, action: 'update', module: 'treasury', entityId: check.id, entityType: 'check', details: { status } });
+  const phase = CHECK_PHASE_BY_STATUS[status];
+  const movementDate = date ? assertIsoDate(date, 'تاريخ الحركة') : todayIso();
+  const cashbox = phase === 'settle' ? requireActiveCashbox(db, cashboxId) : null;
+  db.transaction(() => {
+    postCheckPhase(db, userId, check, phase, { date: movementDate, cashbox });
+    db.prepare('UPDATE checks SET status = ? WHERE id = ?').run(status, check.id);
+    audit(db, { userId, action: 'update', module: 'treasury', entityId: check.id, entityType: 'check', details: { status, date: movementDate } });
+  })();
 }
 
 module.exports = {

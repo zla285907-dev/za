@@ -87,6 +87,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       createTransfer: (input) => invoke('transfers:create', input),
       checks: () => invoke('checks:list'),
       createCheck: (input) => invoke('checks:create', input),
+      updateCheckStatus: (input) => invoke('checks:updateStatus', input),
+    },
+    imports: {
+      previewParties: (csvText) => invoke('import:previewParties', { csvText }),
+      commitParties: (csvText) => invoke('import:commitParties', { csvText }),
     },
     accounting: {
       accounts: () => invoke('accounting:accounts'),

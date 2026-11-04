@@ -172,7 +172,12 @@ export interface DesktopApi {
       transfers: () => Promise<unknown[]>;
       createTransfer: (input: Record<string, unknown>) => Promise<unknown>;
       checks: () => Promise<unknown[]>;
-      createCheck: (input: Record<string, unknown>) => Promise<unknown>;
+      createCheck: (input: Record<string, unknown>) => Promise<{ id: string; docNumber: string }>;
+      updateCheckStatus: (input: Record<string, unknown>) => Promise<void>;
+    };
+    imports: {
+      previewParties: (csvText: string) => Promise<ImportPartyPlan>;
+      commitParties: (csvText: string) => Promise<{ imported: number; skipped: number }>;
     };
     accounting: {
       accounts: () => Promise<unknown[]>;
@@ -415,6 +420,12 @@ declare global {
 }
 
 import { getMockDesktopApi } from '@/lib/mockDesktopApi';
+
+export interface ImportPartyPlan {
+  ready: { line: number; name: string; type: string; phone: string | null }[];
+  duplicates: { line: number; name: string; type: string }[];
+  errors: { line: number; message: string }[];
+}
 
 export function isElectronAvailable(): boolean {
   return typeof window !== 'undefined' && Boolean(window.electronAPI);
