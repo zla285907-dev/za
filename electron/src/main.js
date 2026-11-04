@@ -19,7 +19,6 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: 'نظام الحسابات والإدارة المالية للمزرعة',
-    icon: path.join(__dirname, '..', 'public', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -27,7 +26,10 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  const indexPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'dist', 'index.html')
+    : path.join(__dirname, '..', '..', 'dist', 'index.html');
+  mainWindow.loadFile(indexPath);
 }
 
 function registerIpcHandlers() {

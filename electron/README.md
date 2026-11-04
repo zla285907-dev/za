@@ -2,56 +2,40 @@
 
 ## الحالة الحالية
 
-في بيئة Bolt (متصفح): يعمل التطبيق بقاعدة بيانات PGlite (Postgres WASM) محفوظة في IndexedDB — حفظ محلي حقيقي دون إنترنت.
+- **المتصفح (المعاينة):** يعمل التطبيق بقاعدة بيانات PGlite محفوظة في IndexedDB.
+- **سطح المكتب (Electron):** العملية الرئيسية تفتح قاعدة بيانات SQLite عبر better-sqlite3، والواجهة تتصل بها عبر جسر IPC آمن (`preload.js`).
 
-في بيئة Windows الإنتاجية: يستخدم التطبيق Electron + better-sqlite3 كقاعدة بيانات محلية.
+## التشغيل والاختبار
 
-## البنية
-
+```bash
+npm install                 # من جذر المشروع (واجهة الويب)
+cd electron && npm install  # تبعيات سطح المكتب
+npm test                    # داخل electron/: اختبارات قاعدة البيانات والمحاسبة والصلاحيات
 ```
-electron/
-  src/
-    main.js      — العملية الرئيسية (نافذة التطبيق + IPC + قاعدة البيانات)
-    preload.js   — جسر آمن بين الواجهة و Node.js
-  package.json   — إعدادات Electron + electron-builder
-```
+
+آخر تشغيل: 130 اختبارًا ناجحًا من 130 في `electron/`، و50 من 50 في جذر المشروع.
 
 ## مواقع البيانات على Windows
 
-- قاعدة البيانات: `%APPDATA%/FarmAccounting/Database/farm.db`
-- النسخ الاحتياطية: `%APPDATA%/FarmAccounting/Backups/`
+- قاعدة البيانات: `%APPDATA%/<اسم التطبيق>/Database/farm.db`
+- النسخ الاحتياطية: `%APPDATA%/<اسم التطبيق>/Backups/`
 
-هذه المجلدات **خارج** مجلد التثبيت فلا تضيع البيانات عند التحديث.
+هذه المجلدات خارج مجلد التثبيت فلا تضيع البيانات عند التحديث.
 
-## لبناء ملف تثبيت Windows EXE
+## بناء ملف تثبيت Windows
 
-### المتطلبات على جهاز Windows:
-1. Node.js 18+ 
-2. تثبيت اعتمادات المشروع:
-   ```bash
-   npm install
-   cd electron && npm install
-   ```
+```bash
+cd electron
+npm run build:win
+```
 
-2. إضافة better-sqlite3:
-   ```bash
-   npm install better-sqlite3
-   ```
+يبني هذا الأمر واجهة الويب أولًا ثم يحزم التطبيق. النتيجة المتوقعة هي ملف `.exe` في `electron/release/`.
 
-3. تعديل `electron/src/main.js` لتفعيل better-sqlite3 (الكود موجود كتعليقات).
+**حالة البناء الأخيرة:** لم يكتمل التحزيم في بيئة Linux لأن electron-builder يحتاج Wine لإتمام خطوة NSIS. يجب تشغيل `npm run build:win` على جهاز Windows (أو جهاز Linux/macOS مع Wine) والتحقق من ملف التثبيت الناتج قبل توزيعه.
 
-4. تعديل `src/db/db.ts` لاستخدام IPC بدلًا من PGlite في بيئة Electron.
+## ملاحظات وقيود معروفة
 
-5. بناء ملف التثبيت:
-   ```bash
-   cd electron
-   npm run build:win
-   ```
-
-6. النتيجة في مجلد `electron/release/` — ملف `.exe` قابل للتثبيت.
-
-## ملاحظات
-
-- يجب توفير أيقونة التطبيق في `public/icon.png` (256x256 على الأقل).
-- التطبيق يعمل دون إنترنت بالكامل بعد التثبيت.
-- البيانات محفوظة محليًا في AppData ولا تعتمد على أي خدمة سحابية.
+- ملف الأيقونة `public/icon.png` غير موجود حاليًا؛ تم إيقاف ربطه بالبناء.
+- توقيع ملف `.exe` معطّل (`signAndEditExecutable: false`) لأن أدواته تحتاج Windows أو Wine.
+- بعض مسارات الواجهة ما زالت تستخدم منطق المعاينة (PGlite) وتحتاج مراجعة لتمر كلها عبر IPC قبل اعتبار نسخة سطح المكتب جاهزة للإنتاج.
+- التطبيق يعمل دون إنترنت بعد التثبيت ولا يعتمد على أي خدمة سحابية.

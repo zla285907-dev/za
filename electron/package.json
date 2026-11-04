@@ -2,11 +2,11 @@
   "name": "farm-accounting-desktop",
   "version": "1.0.0",
   "description": "نظام الحسابات والإدارة المالية لمزرعة المواشي — تطبيق سطح المكتب",
-  "main": "electron/src/main.js",
+  "main": "src/main.js",
   "scripts": {
     "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build:desktop": "npm run build && electron-builder",
-    "build:win": "npm run build && electron-builder --win --x64",
+    "build:win": "npm --prefix .. run build && electron-builder --win --x64",
     "electron": "electron .",
     "test": "node --test test/auth.test.js test/login-security.test.js test/accounting.test.js test/parties.test.js test/inventory.test.js test/inventoryFlows.test.js test/invoices.test.js test/treasury.test.js test/treasuryAudit.test.js test/stockCount.test.js test/expenses.test.js test/cancellation.test.js test/partyManagement.test.js test/payroll.test.js test/dashboard.test.js test/backup.test.js test/salesChannels.test.js"
   },
@@ -17,12 +17,12 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*",
-      "electron/**/*"
+      "src/**/*",
+      "package.json"
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.png"
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
@@ -31,8 +31,8 @@
     },
     "extraResources": [
       {
-        "from": "electron/assets",
-        "to": "assets"
+        "from": "../dist",
+        "to": "dist"
       }
     ]
   },
