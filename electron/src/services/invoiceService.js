@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { UserFacingError } = require('../errors');
 const { audit } = require('../domain/audit');
-const { assertIsoDate, optionalText, toMilli, toPiastres, mulDivRound } = require('../domain/money');
+const { assertIsoDate, optionalText, toMilli, toPiastres, mulDivRound, allocateByWeights } = require('../domain/money');
 const { nextDocNumber, postJournalEntry } = require('../domain/postingEngine');
 const { receiveStock, issueStock } = require('./inventoryService');
 const { requireActiveCashbox, cashboxBalance, insertCashTransaction } = require('./treasuryService');
@@ -109,7 +109,8 @@ function createInvoice(db, userId, input) {
     const invoiceId = crypto.randomUUID();
     const docNumber = nextDocNumber(db, docType === 'sales' ? 'sales_invoice' : 'purchase_invoice');
 
-    const costed = items.map((item) => {
+    const purchaseCosts = docType === 'purchase' ? allocateByWeights(total, items.map((item) => item.total)) : null;
+    const costed = items.map((item, index) => {
       if (docType === 'sales') {
         const issued = issueStock(db, {
           date, productId: item.product.id, quantityMilli: item.quantityMilli, type: 'sale',
@@ -118,7 +119,7 @@ function createInvoice(db, userId, input) {
         return { ...item, unitCost: issued.unitCost, costTotal: issued.totalCost };
       }
       const received = receiveStock(db, {
-        date, productId: item.product.id, quantityMilli: item.quantityMilli, totalCost: item.total,
+        date, productId: item.product.id, quantityMilli: item.quantityMilli, totalCost: purchaseCosts[index],
         type: 'purchase', referenceType: 'purchase_invoice', referenceId: invoiceId, activityId, userId,
       });
       return { ...item, unitCost: received.unitCost, costTotal: 0 };
@@ -231,6 +232,7 @@ function createReturn(db, userId, input) {
     const soldQty = invoiceItems.reduce((s, i) => s + i.quantity_milli, 0);
     const soldTotal = invoiceItems.reduce((s, i) => s + i.total, 0);
     const soldCost = invoiceItems.reduce((s, i) => s + i.cost_total, 0);
+    const netSoldTotal = mulDivRound(soldTotal, invoice.total, invoice.subtotal);
     const alreadyReturned = returnedQuantity(db, invoice.id, returnType, productId);
     const remaining = soldQty - alreadyReturned;
     if (quantityMilli > remaining) {
@@ -239,7 +241,7 @@ function createReturn(db, userId, input) {
     return {
       productId,
       quantityMilli,
-      total: mulDivRound(quantityMilli, soldTotal, soldQty),
+      total: mulDivRound(quantityMilli, netSoldTotal, soldQty),
       invoiceCost: mulDivRound(quantityMilli, soldCost, soldQty),
     };
   });

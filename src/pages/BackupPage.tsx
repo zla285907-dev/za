@@ -5,7 +5,8 @@ import EmptyState from '@/components/ui/EmptyState';
 import Badge from '@/components/ui/Badge';
 import { useSession } from '@/context/SessionContext';
 import { formatShortDate } from '@/lib/format';
-import { listBackupLogs, createBackup, restoreBackup, type BackupLog } from '@/services/backupService';
+import { isElectronAvailable } from '@/lib/electronBridge';
+import { listBackupLogs, createBackup, restoreBackup, restoreDesktopBackup, type BackupLog } from '@/services/backupService';
 
 export default function BackupPage() {
   const { user, hasPermission } = useSession();
@@ -13,6 +14,7 @@ export default function BackupPage() {
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const desktop = isElectronAvailable();
 
   const load = useCallback(() => listBackupLogs().then(setLogs), []);
   useEffect(() => { load(); }, [load]);
@@ -22,7 +24,7 @@ export default function BackupPage() {
     setMessage(null);
     try {
       await createBackup(true, user?.id ?? null);
-      setMessage({ type: 'success', text: 'تم إنشاء النسخة الاحتياطية وتنزيلها' });
+      setMessage({ type: 'success', text: desktop ? 'تم إنشاء النسخة الاحتياطية في مجلد النسخ' : 'تم إنشاء النسخة الاحتياطية وتنزيلها' });
       load();
     } catch (e) {
       setMessage({ type: 'error', text: e instanceof Error ? e.message : 'خطأ' });
@@ -40,6 +42,13 @@ export default function BackupPage() {
     }
   }
 
+  async function handleDesktopRestore(filename: string) {
+    if (!confirm('تحذير: الاستعادة ستستبدل كل البيانات الحالية. سيتم إنشاء نسخة أمان قبلها. هل أنت متأكد؟')) return;
+    setMessage(null);
+    const result = await restoreDesktopBackup(filename);
+    setMessage({ type: result.success ? 'success' : 'error', text: result.message });
+  }
+
   const lastBackup = logs.find((l) => l.status === 'success');
 
   return (
@@ -47,8 +56,12 @@ export default function BackupPage() {
       <PageHeader title="النسخ الاحتياطي والاستعادة" subtitle="نسخ محلية آمنة — الاحتفاظ بجميع النسخ دون حذف" icon={DatabaseBackup}
         actions={hasPermission('backup.create') ? (
           <>
-            <button onClick={() => fileRef.current?.click()} className="btn-secondary"><RotateCcw className="h-4 w-4" /> استعادة</button>
-            <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRestore(f); }} />
+            {!desktop && (
+              <>
+                <button onClick={() => fileRef.current?.click()} className="btn-secondary"><RotateCcw className="h-4 w-4" /> استعادة</button>
+                <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRestore(f); }} />
+              </>
+            )}
             <button onClick={handleCreate} disabled={creating} className="btn-primary">{creating ? 'جارٍ...' : <><Download className="h-4 w-4" /> إنشاء نسخة</>}</button>
           </>
         ) : undefined}
@@ -84,6 +97,7 @@ export default function BackupPage() {
                 <th className="px-4 py-3 text-right font-semibold">الملف</th><th className="px-4 py-3 text-right font-semibold">الحجم</th>
                 <th className="px-4 py-3 text-right font-semibold">الحالة</th><th className="px-4 py-3 text-right font-semibold">النوع</th>
                 <th className="px-4 py-3 text-right font-semibold">التاريخ</th>
+                {desktop && hasPermission('backup.restore') && <th className="px-4 py-3 text-right font-semibold">إجراء</th>}
               </tr></thead>
               <tbody>
                 {logs.map((l) => (
@@ -93,6 +107,11 @@ export default function BackupPage() {
                     <td className="px-4 py-3"><Badge tone={l.status === 'success' ? 'emerald' : l.status === 'restored' ? 'blue' : 'rose'} dot>{l.status === 'success' ? 'نجحت' : l.status === 'restored' ? 'مستعادة' : 'فشلت'}</Badge></td>
                     <td className="px-4 py-3">{l.is_manual ? <Badge tone="slate">يدوي</Badge> : <Badge tone="slate">تلقائي</Badge>}</td>
                     <td className="px-4 py-3 num text-slate-600">{formatShortDate(l.created_at)}</td>
+                    {desktop && hasPermission('backup.restore') && (
+                      <td className="px-4 py-3">
+                        {l.status === 'success' && <button onClick={() => handleDesktopRestore(l.filename)} className="btn-secondary text-xs"><RotateCcw className="h-3.5 w-3.5" /> استعادة</button>}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

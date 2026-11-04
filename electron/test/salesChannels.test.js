@@ -350,7 +350,7 @@ test('a fully returned sale whose cash is already spent owes the customer for la
   booksBalanced();
 });
 
-test('cancelling is refused when returns exceed what the invoice still owes after its discount', async () => {
+test('a full return of a discounted invoice credits the net total and leaves nothing to cancel', async () => {
   const created = await invoke('invoices:create', {
     docType: 'sales', date: '2024-02-01', partyId: customerId, paymentMethod: 'credit', discount: 2000,
     items: [{ productId, quantity: 1, unitPrice: 8000, discount: 0 }],
@@ -361,12 +361,12 @@ test('cancelling is refused when returns exceed what the invoice still owes afte
     returnType: 'sales_return', invoiceId: created.data.id, date: '2024-02-02', items: [{ productId, quantity: 1 }],
   });
   assert.equal(returned.ok, true, returned.error);
+  assert.equal(returned.data.total, 6000);
 
   const cancelled = await invoke('invoices:cancel', { invoiceId: created.data.id, date: '2024-02-03' });
-  assert.equal(cancelled.ok, false);
-  assert.match(cancelled.error, /تتجاوز قيمتها المتبقية/);
+  assert.equal(cancelled.ok, true, cancelled.error);
   const listed = await invoke('invoices:list', { docType: 'sales' });
-  assert.equal(listed.data[0].status, 'posted');
+  assert.equal(listed.data[0].status, 'cancelled');
   booksBalanced();
 });
 

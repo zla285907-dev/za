@@ -162,7 +162,9 @@ function deleteParty(db, userId, partyId) {
       (SELECT COUNT(*) FROM invoices WHERE party_id = @id) +
       (SELECT COUNT(*) FROM returns WHERE party_id = @id) +
       (SELECT COUNT(*) FROM payments WHERE party_id = @id) +
-      (SELECT COUNT(*) FROM cash_transactions WHERE party_id = @id) AS total
+      (SELECT COUNT(*) FROM cash_transactions WHERE party_id = @id) +
+      (SELECT COUNT(*) FROM checks WHERE party_id = @id) +
+      (SELECT COUNT(*) FROM financial_transfers WHERE party_id = @id) AS total
   `).get({ id: partyId }).total;
   if (usage > 0) throw new UserFacingError('لا يمكن حذف طرف له حركات. غيّر حالته إلى غير نشط بدلًا من ذلك');
   db.prepare('DELETE FROM parties WHERE id = ?').run(partyId);
