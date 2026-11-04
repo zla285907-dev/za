@@ -30,7 +30,7 @@ function listEmployees(db) {
   `).all();
 }
 
-function createEmployee(db, userId, input) {
+function parseEmployeeInput(db, input) {
   const name = requireText(input?.name, 'اسم الموظف', 100);
   const salaryType = input?.salaryType ?? 'monthly';
   if (!SALARY_TYPES.includes(salaryType)) throw new UserFacingError('نوع الأجر غير مدعوم (شهري أو يومي)');
@@ -40,13 +40,23 @@ function createEmployee(db, userId, input) {
   if (activityId && !db.prepare('SELECT id FROM activities WHERE id = ?').get(activityId)) {
     throw new UserFacingError('النشاط غير موجود');
   }
+  return {
+    name, salaryType, baseSalary, hireDate, activityId,
+    phone: optionalText(input?.phone, 30),
+    jobTitle: optionalText(input?.jobTitle, 80),
+    notes: optionalText(input?.notes, 300),
+  };
+}
+
+function createEmployee(db, userId, input) {
+  const fields = parseEmployeeInput(db, input);
   const id = crypto.randomUUID();
   db.prepare(`
     INSERT INTO employees (id, name, phone, job_title, hire_date, base_salary, salary_type, activity_id, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, optionalText(input?.phone, 30), optionalText(input?.jobTitle, 80), hireDate, baseSalary,
-    salaryType, activityId, optionalText(input?.notes, 300));
-  audit(db, { userId, action: 'create', module: 'employees', entityId: id, entityType: 'employee', details: { name } });
+  `).run(id, fields.name, fields.phone, fields.jobTitle, fields.hireDate, fields.baseSalary,
+    fields.salaryType, fields.activityId, fields.notes);
+  audit(db, { userId, action: 'create', module: 'employees', entityId: id, entityType: 'employee', details: { name: fields.name } });
   return { id };
 }
 
@@ -243,6 +253,7 @@ function listSalaries(db, { month }) {
 
 module.exports = {
   listEmployees,
+  parseEmployeeInput,
   createEmployee,
   recordAttendance,
   listAttendance,

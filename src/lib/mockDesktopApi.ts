@@ -663,6 +663,10 @@ const mockApi: DesktopApi = {
     imports: {
       previewParties: async () => ({ ready: [], duplicates: [], errors: [] }),
       commitParties: async () => ({ imported: 0, skipped: 0 }),
+      previewProducts: async () => ({ ready: [], duplicates: [], errors: [] }),
+      commitProducts: async () => ({ imported: 0, skipped: 0 }),
+      previewEmployees: async () => ({ ready: [], duplicates: [], errors: [] }),
+      commitEmployees: async () => ({ imported: 0, skipped: 0 }),
     },
     accounting: {
       accounts: async () => accounts.map((account) => ({ ...account })),

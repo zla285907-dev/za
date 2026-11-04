@@ -178,6 +178,10 @@ export interface DesktopApi {
     imports: {
       previewParties: (csvText: string) => Promise<ImportPartyPlan>;
       commitParties: (csvText: string) => Promise<{ imported: number; skipped: number }>;
+      previewProducts: (csvText: string) => Promise<ImportPartyPlan>;
+      commitProducts: (csvText: string) => Promise<{ imported: number; skipped: number }>;
+      previewEmployees: (csvText: string) => Promise<ImportPartyPlan>;
+      commitEmployees: (csvText: string) => Promise<{ imported: number; skipped: number }>;
     };
     accounting: {
       accounts: () => Promise<unknown[]>;
@@ -422,8 +426,8 @@ declare global {
 import { getMockDesktopApi } from '@/lib/mockDesktopApi';
 
 export interface ImportPartyPlan {
-  ready: { line: number; name: string; type: string; phone: string | null }[];
-  duplicates: { line: number; name: string; type: string }[];
+  ready: { line: number; name: string; type?: string; phone?: string | null }[];
+  duplicates: { line: number; name: string; type?: string }[];
   errors: { line: number; message: string }[];
 }
 

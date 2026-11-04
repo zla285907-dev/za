@@ -273,6 +273,7 @@ module.exports = {
   listStockBalances,
   listWarehouses,
   createWarehouse,
+  parseProductInput,
   createProduct,
   updateProduct,
   receiveStock,

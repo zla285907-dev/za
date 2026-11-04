@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, FileSpreadsheet, X, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import EmptyState from '@/components/ui/EmptyState';
@@ -12,6 +12,13 @@ const DATA_TYPES = [
   { value: 'products', label: 'أصناف' },
   { value: 'employees', label: 'موظفون' },
 ];
+
+function desktopImportApi(type: string) {
+  const imports = getDesktopApi().farm.imports;
+  if (type === 'products') return { preview: imports.previewProducts, commit: imports.commitProducts };
+  if (type === 'employees') return { preview: imports.previewEmployees, commit: imports.commitEmployees };
+  return { preview: imports.previewParties, commit: imports.commitParties };
+}
 
 function PlanSummary({ plan }: { plan: ImportPartyPlan }) {
   return (
@@ -46,6 +53,16 @@ export default function ImportPage() {
   const [plan, setPlan] = useState<ImportPartyPlan | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (step !== 'preview' || !isElectronAvailable()) return;
+    let cancelled = false;
+    setPlan(null);
+    desktopImportApi(dataType).preview(rawText)
+      .then((next) => { if (!cancelled) setPlan(next); })
+      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : 'خطأ في المعاينة'); });
+    return () => { cancelled = true; };
+  }, [step, dataType, rawText]);
+
   function parseCSV(text: string): string[][] {
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     return lines.map((line) => {
@@ -76,11 +93,6 @@ export default function ImportPage() {
         setRows(parsed.slice(1));
         setRawText(text);
         setStep('preview');
-        if (isElectronAvailable()) {
-          getDesktopApi().farm.imports.previewParties(text)
-            .then(setPlan)
-            .catch((err: unknown) => setError(err instanceof Error ? err.message : 'خطأ في المعاينة'));
-        }
       } else {
         setError('يدعم البرنامج حاليًا ملفات CSV. صيغ XLSX و PDF ستُضاف لاحقًا.');
       }
@@ -92,7 +104,7 @@ export default function ImportPage() {
     setImporting(true); setError(null);
     try {
       if (isElectronAvailable()) {
-        const result = await getDesktopApi().farm.imports.commitParties(rawText);
+        const result = await desktopImportApi(dataType).commit(rawText);
         setImportedCount(result.imported);
         setSkippedCount(result.skipped);
         setStep('done');
@@ -173,7 +185,7 @@ export default function ImportPage() {
               </div>
               <div className="mb-4"><label className="text-sm font-semibold text-slate-700 mb-1 block">نوع البيانات</label>
                 <select value={dataType} onChange={(e) => setDataType(e.target.value)} className="input-base">
-                  {DATA_TYPES.filter((d) => !isElectronAvailable() || d.value === 'parties').map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  {DATA_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select></div>
               <div className="overflow-x-auto max-h-64 border border-slate-200 rounded-lg">
                 <table className="w-full text-sm">

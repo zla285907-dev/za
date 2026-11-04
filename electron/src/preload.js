@@ -92,6 +92,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     imports: {
       previewParties: (csvText) => invoke('import:previewParties', { csvText }),
       commitParties: (csvText) => invoke('import:commitParties', { csvText }),
+      previewProducts: (csvText) => invoke('import:previewProducts', { csvText }),
+      commitProducts: (csvText) => invoke('import:commitProducts', { csvText }),
+      previewEmployees: (csvText) => invoke('import:previewEmployees', { csvText }),
+      commitEmployees: (csvText) => invoke('import:commitEmployees', { csvText }),
     },
     accounting: {
       accounts: () => invoke('accounting:accounts'),
