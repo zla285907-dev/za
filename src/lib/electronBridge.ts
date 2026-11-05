@@ -193,10 +193,10 @@ export interface DesktopApi {
       trialBalance: (input?: Record<string, unknown>) => Promise<unknown>;
       profitLoss: (input?: Record<string, unknown>) => Promise<unknown>;
       balanceSheet?: (input?: Record<string, unknown>) => Promise<unknown>;
-      fiscalPeriods?: () => Promise<unknown[]>;
-      createFiscalPeriod?: (input: Record<string, unknown>) => Promise<{ id: string }>;
-      closeFiscalPeriod?: (input: Record<string, unknown>) => Promise<void>;
-      openingBalances?: {
+      fiscalPeriods: () => Promise<unknown[]>;
+      createFiscalPeriod: (input: Record<string, unknown>) => Promise<{ id: string }>;
+      closeFiscalPeriod: (input: Record<string, unknown>) => Promise<void>;
+      openingBalances: {
         list: () => Promise<unknown[]>;
         set: (input: Record<string, unknown>) => Promise<{ id: string }>;
       };
@@ -242,6 +242,15 @@ export interface DashboardSummary {
   stockValue: number;
   lowStockCount: number;
   monthProfit: number;
+  totalRevenues: number;
+  totalExpenses: number;
+  netProfit: number;
+  totalSales: number;
+  totalPurchases: number;
+  inventoryValue: number;
+  salariesDue: number;
+  advancesDue: number;
+  checksDue: number;
 }
 
 export interface DesktopPartyRow {

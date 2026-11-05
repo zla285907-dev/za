@@ -1,4 +1,7 @@
 import { getDb } from '@/db/db';
+import { getDesktopApi, isElectronAvailable } from '@/lib/electronBridge';
+
+const desktopAccounting = () => getDesktopApi().farm.accounting;
 
 export interface FiscalPeriod {
   id: string;
@@ -10,6 +13,7 @@ export interface FiscalPeriod {
 }
 
 export async function listFiscalPeriods(): Promise<FiscalPeriod[]> {
+  if (isElectronAvailable()) return (await desktopAccounting().fiscalPeriods()) as FiscalPeriod[];
   const db = await getDb();
   const res = await db.query<FiscalPeriod>(
     `SELECT id, name, start_date::text, end_date::text, is_closed, closed_at::text FROM fiscal_periods ORDER BY start_date DESC`
@@ -18,6 +22,11 @@ export async function listFiscalPeriods(): Promise<FiscalPeriod[]> {
 }
 
 export async function getCurrentFiscalPeriod(): Promise<FiscalPeriod | null> {
+  if (isElectronAvailable()) {
+    const today = new Date().toISOString().slice(0, 10);
+    const periods = await listFiscalPeriods();
+    return periods.find((p) => !p.is_closed && p.start_date <= today && p.end_date >= today) ?? null;
+  }
   const db = await getDb();
   const res = await db.query<FiscalPeriod>(
     `SELECT id, name, start_date::text, end_date::text, is_closed, closed_at::text
@@ -32,6 +41,12 @@ export async function createFiscalPeriod(data: {
   startDate: string;
   endDate: string;
 }): Promise<FiscalPeriod> {
+  if (isElectronAvailable()) {
+    const created = await desktopAccounting().createFiscalPeriod(data);
+    const period = (await listFiscalPeriods()).find((p) => p.id === created.id);
+    if (!period) throw new Error('تعذر قراءة الفترة المالية بعد إنشائها');
+    return period;
+  }
   const db = await getDb();
   const res = await db.query<FiscalPeriod>(
     `INSERT INTO fiscal_periods (name, start_date, end_date)
@@ -43,6 +58,10 @@ export async function createFiscalPeriod(data: {
 }
 
 export async function closeFiscalPeriod(id: string, closedBy: string | null): Promise<void> {
+  if (isElectronAvailable()) {
+    await desktopAccounting().closeFiscalPeriod({ periodId: id });
+    return;
+  }
   const db = await getDb();
   await db.query(
     `UPDATE fiscal_periods SET is_closed = true, closed_at = now(), closed_by = $2 WHERE id = $1`,

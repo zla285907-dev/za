@@ -36,7 +36,7 @@ export interface JournalLine {
 
 // ===================== دليل الحسابات =====================
 export async function listAccounts(): Promise<Account[]> {
-  if (typeof window !== 'undefined' && !window.electronAPI) return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.accounts()) as Account[];
+  if (typeof window !== 'undefined') return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.accounts()) as Account[];
   const db = await getDb();
   const res = await db.query<Account>(
     'SELECT id, code, name, type, parent_id, is_active, is_system, balance FROM accounts ORDER BY code'
@@ -50,7 +50,7 @@ export async function createAccount(data: {
   type: string;
   parentId?: string | null;
 }): Promise<Account> {
-  if (typeof window !== 'undefined' && !window.electronAPI) {
+  if (typeof window !== 'undefined') {
     const api = (await import('@/lib/electronBridge')).getDesktopApi();
     const created = await api.farm.accounting.createAccount(data);
     return (await listAccounts()).find((account) => account.id === created.id) as Account;
@@ -92,7 +92,7 @@ export async function createJournalEntry(data: {
   lines: { accountId: string; debit: number; credit: number; description?: string }[]; // مبالغ بجنيه
   createdBy?: string | null;
 }): Promise<{ id: string; entryNumber: string }> {
-  if (typeof window !== 'undefined' && !window.electronAPI) return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.createJournal({ ...data })) as { id: string; entryNumber: string };
+  if (typeof window !== 'undefined') return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.createJournal({ ...data })) as { id: string; entryNumber: string };
   // التحقق من التوازن
   const totalDebit = data.lines.reduce((s, l) => s + toCents(l.debit), 0);
   const totalCredit = data.lines.reduce((s, l) => s + toCents(l.credit), 0);
@@ -129,6 +129,11 @@ export async function createJournalEntry(data: {
 
 // ===================== قيد عكسي (إلغاء) =====================
 export async function reverseJournalEntry(entryId: string, date: string, createdBy?: string | null): Promise<void> {
+  const bridge = await import('@/lib/electronBridge');
+  if (bridge.isElectronAvailable()) {
+    await bridge.getDesktopApi().farm.accounting.reverseJournal({ entryId, date });
+    return;
+  }
   const db = await getDb();
   const entry = await db.query<JournalEntry>(
     `SELECT id, entry_number, date, description, reference_type, reference_id, activity_id, status FROM journal_entries WHERE id = $1`,
@@ -165,7 +170,7 @@ export async function reverseJournalEntry(entryId: string, date: string, created
 
 // ===================== القيود اليومية =====================
 export async function listJournalEntries(limit = 50, offset = 0, filters?: { dateFrom?: string; dateTo?: string }): Promise<JournalEntry[]> {
-  if (typeof window !== 'undefined' && !window.electronAPI) return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.journals({ ...filters, limit, offset })) as JournalEntry[];
+  if (typeof window !== 'undefined') return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.journals({ ...filters, limit, offset })) as JournalEntry[];
   const db = await getDb();
   let query = `SELECT e.id, e.entry_number, e.date::text, e.description, e.reference_type, e.reference_id,
                       e.activity_id, e.status
@@ -214,7 +219,7 @@ export interface LedgerRow {
 }
 
 export async function getGeneralLedger(accountId: string, dateFrom?: string, dateTo?: string): Promise<{ account: Account; rows: LedgerRow[]; opening: number; closing: number }> {
-  if (typeof window !== 'undefined' && !window.electronAPI) return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.ledger({ accountId, dateFrom, dateTo })) as { account: Account; rows: LedgerRow[]; opening: number; closing: number };
+  if (typeof window !== 'undefined') return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.ledger({ accountId, dateFrom, dateTo })) as { account: Account; rows: LedgerRow[]; opening: number; closing: number };
   const db = await getDb();
   const accRes = await db.query<Account>('SELECT id, code, name, type, parent_id, is_active, is_system, balance FROM accounts WHERE id = $1', [accountId]);
   if (accRes.rows.length === 0) throw new Error('الحساب غير موجود');
@@ -263,7 +268,7 @@ export interface TrialBalanceRow {
 }
 
 export async function getTrialBalance(dateFrom?: string, dateTo?: string): Promise<{ rows: TrialBalanceRow[]; totalDebit: number; totalCredit: number }> {
-  if (typeof window !== 'undefined' && !window.electronAPI) return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.trialBalance({ dateFrom, dateTo })) as { rows: TrialBalanceRow[]; totalDebit: number; totalCredit: number };
+  if (typeof window !== 'undefined') return (await (await import('@/lib/electronBridge')).getDesktopApi().farm.accounting.trialBalance({ dateFrom, dateTo })) as { rows: TrialBalanceRow[]; totalDebit: number; totalCredit: number };
   const db = await getDb();
   let query = `
     SELECT a.id as account_id, a.code, a.name, a.type,
@@ -298,6 +303,11 @@ export async function getTrialBalance(dateFrom?: string, dateTo?: string): Promi
 
 // ===================== الأرصدة الافتتاحية =====================
 export async function setOpeningBalance(data: { accountId: string; debit: number; credit: number; date: string }): Promise<void> {
+  const bridge = await import('@/lib/electronBridge');
+  if (bridge.isElectronAvailable()) {
+    await bridge.getDesktopApi().farm.accounting.openingBalances.set(data);
+    return;
+  }
   const db = await getDb();
   await db.query(
     `INSERT INTO opening_balances (account_id, debit, credit, date) VALUES ($1, $2, $3, $4)`,
@@ -313,6 +323,10 @@ export async function setOpeningBalance(data: { accountId: string; debit: number
 }
 
 export async function listOpeningBalances(): Promise<{ account_id: string; code: string; name: string; debit: number; credit: number; date: string }[]> {
+  const bridge = await import('@/lib/electronBridge');
+  if (bridge.isElectronAvailable()) {
+    return (await bridge.getDesktopApi().farm.accounting.openingBalances.list()) as { account_id: string; code: string; name: string; debit: number; credit: number; date: string }[];
+  }
   const db = await getDb();
   const res = await db.query<{ account_id: string; code: string; name: string; debit: number; credit: number; date: string }>(
     `SELECT ob.account_id, a.code, a.name, ob.debit, ob.credit, ob.date::text

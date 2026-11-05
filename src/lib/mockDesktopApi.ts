@@ -698,7 +698,7 @@ const mockApi: DesktopApi = {
       recordDeduction: async (input) => createMockDeduction(input),
       paySalary: async (input) => payMockSalary(input),
     },
-    dashboard: { summary: async (): Promise<DashboardSummary> => ({ asOf: now, cashOnHand: 125000, receivables: 48000, payables: 22000, stockValue: products.reduce((sum, product) => sum + product.total_value, 0), lowStockCount: products.filter((product) => product.is_low_stock).length, monthProfit: 34000 }) },
+    dashboard: { summary: async (): Promise<DashboardSummary> => ({ asOf: now, cashOnHand: 125000, receivables: 48000, payables: 22000, stockValue: products.reduce((sum, product) => sum + product.total_value, 0), lowStockCount: products.filter((product) => product.is_low_stock).length, monthProfit: 34000, totalRevenues: 0, totalExpenses: 0, netProfit: 0, totalSales: 0, totalPurchases: 0, inventoryValue: products.reduce((sum, product) => sum + product.total_value, 0), salariesDue: 0, advancesDue: 0, checksDue: 0 }) },
     backups: { list: async () => [], restore: async () => ({ restarting: false }) },
   },
 };
