@@ -12,6 +12,7 @@ const inventory = require('../services/inventoryService');
 const stockCounts = require('../services/stockCountService');
 const { dashboardSummary } = require('../services/dashboardService');
 const treasuryAudit = require('../services/treasuryAuditService');
+const settings = require('../services/settingsService');
 
 // كل قناة تستدعي دالة خدمة واحدة بعد التحقق من صلاحية محددة. المعرّف يأتي من الجلسة فقط
 function farmChannels() {
@@ -99,6 +100,8 @@ function farmChannels() {
     ['accounting:setOpeningBalance', 'accounting.add', (db, uid, input) => accounting.setOpeningBalance(db, uid, input)],
 
     ['dashboard:summary', 'dashboard.view', (db, _uid, args) => dashboardSummary(db, args)],
+    ['settings:list', 'settings.view', (db, uid) => settings.listSettings(db, uid)],
+    ['settings:update', 'settings.edit', (db, uid, input) => settings.updateSettings(db, uid, input?.items)],
   ];
 }
 

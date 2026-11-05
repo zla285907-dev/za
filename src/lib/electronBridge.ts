@@ -216,6 +216,10 @@ export interface DesktopApi {
     dashboard: {
       summary: (args: { asOf: string }) => Promise<DashboardSummary>;
     };
+    settings: {
+      list: () => Promise<DesktopSettingRow[]>;
+      update: (items: { key: string; value: string }[]) => Promise<DesktopSettingRow[]>;
+    };
     backups: {
       list: () => Promise<{ filename: string; size: number; createdAt: string }[]>;
       restore: (filename: string) => Promise<{ restarting: boolean }>;
@@ -251,6 +255,14 @@ export interface DashboardSummary {
   salariesDue: number;
   advancesDue: number;
   checksDue: number;
+}
+
+export interface DesktopSettingRow {
+  key: string;
+  value: string;
+  label: string | null;
+  category: string;
+  updated_at: string;
 }
 
 export interface DesktopPartyRow {

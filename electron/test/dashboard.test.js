@@ -41,3 +41,20 @@ test('the dashboard reports cash, stock value, low stock and this month profit',
   assert.equal(summary.receivables, 0);
   assert.equal(summary.payables, 0);
 });
+
+test('the dashboard reports sales, purchases, revenues and expenses in piastres', () => {
+  const cashboxId = treasury.createCashbox(db, userId, { name: 'الرئيسية', openingBalance: 100000, date: '2024-01-01' }).id;
+  expenses.createExpense(db, userId, { date: '2024-03-05', categoryId: 'ec_feed', amount: 20000, cashboxId });
+  expenses.createIncome(db, userId, { date: '2024-03-06', categoryId: 'ic_other', amount: 50000, cashboxId });
+
+  const summary = dashboardSummary(db, { asOf: '2024-03-31' });
+  assert.equal(summary.totalRevenues, 50000);
+  assert.equal(summary.totalExpenses, 20000);
+  assert.equal(summary.netProfit, 30000);
+  assert.equal(summary.totalSales, 0);
+  assert.equal(summary.totalPurchases, 0);
+  assert.equal(summary.salariesDue, 0);
+  assert.equal(summary.advancesDue, 0);
+  assert.equal(summary.checksDue, 0);
+});
+

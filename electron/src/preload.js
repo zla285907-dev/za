@@ -129,6 +129,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dashboard: {
       summary: (args) => invoke('dashboard:summary', args),
     },
+    settings: {
+      list: () => invoke('settings:list'),
+      update: (items) => invoke('settings:update', { items }),
+    },
     backups: {
       list: () => invoke('backup:list'),
       restore: (filename) => invoke('backup:restore', { filename }),
